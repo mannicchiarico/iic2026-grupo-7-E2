@@ -1,0 +1,134 @@
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  margin: 0;
+  padding: 16px 16px 96px 16px;
+  background: #111111;
+  color: #f5f5f5;
+  min-height: 100vh;
+}
+
+header {
+  margin-bottom: 14px;
+}
+
+h1 {
+  font-size: 1.3rem;
+  margin: 0 0 12px 0;
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 12px;
+  font-weight: 600;
+  font-family: inherit;
+  transition: transform 0.08s ease, background-color 0.15s ease, border-color 0.15s ease;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+#btnConnect {
+  background: #2563eb;
+  color: #ffffff;
+  width: 100%;
+  padding: 16px;
+  font-size: 1.05rem;
+}
+
+#btnConnect.connected {
+  background: #16a34a;
+}
+
+.telemetry {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  background: #1c1c1c;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  text-align: center;
+}
+
+.telemetry-item .label {
+  display: block;
+  font-size: 0.72rem;
+  color: #a3a3a3;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.telemetry-item strong {
+  font-size: 0.9rem;
+  color: #ffffff;
+}
+
+.lista-ajies {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.aji-btn {
+  background: #1f1f1f;
+  color: #ffffff;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 1.05rem;
+  border: 2px solid #2a2a2a;
+  text-align: left;
+}
+
+.aji-btn.active {
+  border-color: #ef4444;
+  background: #381616;
+}
+
+.aji-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.aji-origen {
+  font-size: 0.78rem;
+  color: #8e8e8e;
+  font-weight: 400;
+}
+
+.shu {
+  font-size: 0.85rem;
+  color: #d4d4d4;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  background: linear-gradient(to top, #111111 80%, rgba(17, 17, 17, 0));
+}
+
+#btnStop {
+  width: 100%;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 18px;
+  font-size: 1.1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+}

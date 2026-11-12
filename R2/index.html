@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Atlas del Picor — Control Físico (SHU)</title>
+  <script src="https://app.protobject.com/framework/p.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <header>
+    <h1>🌶️ Escala Scoville (SHU)</h1>
+    <button id="btnConnect" type="button">Conectar Arduino (USB OTG)</button>
+  </header>
+
+  <section class="telemetry" aria-live="polite">
+    <div class="telemetry-item">
+      <span class="label">Ají activo</span>
+      <strong id="lblNombre">Ninguno</strong>
+    </div>
+    <div class="telemetry-item">
+      <span class="label">Intensidad</span>
+      <strong id="lblShu">0 SHU</strong>
+    </div>
+    <div class="telemetry-item">
+      <span class="label">Motores (P5 · P6)</span>
+      <strong id="lblVel">0 / 1500</strong>
+    </div>
+  </section>
+
+  <main class="lista-ajies" id="menuAjies"></main>
+
+  <footer>
+    <button id="btnStop" type="button">⏹ DETENER MOTORES</button>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

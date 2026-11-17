@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Atlas del Picor — Vibración Física (SHU)</title>
+  <script src="https://app.protobject.com/framework/p.js"></script>
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin: 0; padding: 16px 16px 96px 16px;
+      background: #111111; color: #f5f5f5; min-height: 100vh;
+    }
+    header { margin-bottom: 14px; }
+    h1 { font-size: 1.3rem; margin: 0 0 12px 0; text-align: center; }
+    button {
+      cursor: pointer; border: none; border-radius: 12px;
+      font-weight: 600; font-family: inherit;
+      transition: transform 0.08s ease, background-color 0.15s ease;
+    }
+    button:active { transform: scale(0.98); }
+    #btnConnect { background: #2563eb; color: #ffffff; width: 100%; padding: 16px; font-size: 1.05rem; }
+    #btnConnect.connected { background: #16a34a; }
+    .telemetry {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      background: #1c1c1c; border: 1px solid #2a2a2a; border-radius: 12px;
+      padding: 12px; margin-bottom: 14px; text-align: center;
+    }
+    .telemetry-item .label { display: block; font-size: 0.72rem; color: #a3a3a3; text-transform: uppercase; margin-bottom: 4px; }
+    .telemetry-item strong { font-size: 0.9rem; color: #ffffff; }
+    .lista-ajies { display: flex; flex-direction: column; gap: 10px; }
+    .aji-btn {
+      background: #1f1f1f; color: #ffffff; padding: 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 1.05rem; border: 2px solid #2a2a2a; text-align: left;
+    }
+    .aji-btn.active { border-color: #ef4444; background: #381616; }
+    .aji-info { display: flex; flex-direction: column; gap: 2px; }
+    .aji-origen { font-size: 0.78rem; color: #8e8e8e; font-weight: 400; }
+    .shu { font-size: 0.85rem; color: #d4d4d4; font-weight: 500; white-space: nowrap; }
+    footer {
+      position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 16px;
+      background: linear-gradient(to top, #111111 80%, rgba(17, 17, 17, 0));
+    }
+    #btnStop {
+      width: 100%; background: #dc2626; color: #ffffff; padding: 18px;
+      font-size: 1.1rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🌶️ Escala Scoville (SHU)</h1>
+    <button id="btnConnect" type="button">Conectar Arduino (USB OTG)</button>
+  </header>
+
+  <section class="telemetry" aria-live="polite">
+    <div class="telemetry-item">
+      <span class="label">Ají activo</span>
+      <strong id="lblNombre">Ninguno</strong>
+    </div>
+    <div class="telemetry-item">
+      <span class="label">Intensidad</span>
+      <strong id="lblShu">0 SHU</strong>
+    </div>
+    <div class="telemetry-item">
+      <span class="label">Vibración (P5 · P6)</span>
+      <strong id="lblVel">0 / 1500</strong>
+    </div>
+  </section>
+
+  <main class="lista-ajies" id="menuAjies"></main>
+
+  <footer>
+    <button id="btnStop" type="button">⏹ DETENER VIBRACIÓN</button>
+  </footer>
+
+  <script>
+    const PIN_SERVO_1 = 5;
+    const PIN_SERVO_2 = 6;
+    const MAX_SHU = 1800000;
+
+    let conectado = false;
+    let intervaloVibracion = null;
+    let direccion = 1;
+
+    const AJIES = [
+      { nombre: "Bell Pepper (Pimiento Moro)", origen: "América", rango: "0 SHU", shuPromedio: 0 },
+      { nombre: "Shishito", origen: "Japón", rango: "50 – 200 SHU", shuPromedio: 125 },
+      { nombre: "Banana Pepper", origen: "Internacional", rango: "0 – 500 SHU", shuPromedio: 250 },
+      { nombre: "Pimento (Pimiento Dulce)", origen: "España", rango: "100 – 500 SHU", shuPromedio: 300 },
+      { nombre: "Padrón Pepper", origen: "España", rango: "500 – 2,500 SHU", shuPromedio: 1500 },
+      { nombre: "Poblano Pepper", origen: "México", rango: "1,000 – 2,000 SHU", shuPromedio: 1500 },
+      { nombre: "Pasilla Pepper", origen: "México", rango: "1,000 – 2,500 SHU", shuPromedio: 1750 },
+      { nombre: "Espelette Pepper", origen: "Francia", rango: "1,500 – 4,000 SHU", shuPromedio: 2750 },
+      { nombre: "Guajillo Pepper", origen: "México", rango: "2,500 – 5,000 SHU", shuPromedio: 3750 },
+      { nombre: "Jalapeño", origen: "México", rango: "2,500 – 8,000 SHU", shuPromedio: 5250 },
+      { nombre: "Chipotle", origen: "México", rango: "2,500 – 8,000 SHU", shuPromedio: 5250 },
+      { nombre: "Serrano Pepper", origen: "México", rango: "10,000 – 23,000 SHU", shuPromedio: 16500 },
+      { nombre: "Chile de Árbol", origen: "México", rango: "15,000 – 30,000 SHU", shuPromedio: 22500 },
+      { nombre: "Calabrian Chili", origen: "Italia", rango: "25,000 – 40,000 SHU", shuPromedio: 32500 },
+      { nombre: "Ají Amarillo", origen: "Perú", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
+      { nombre: "Tabasco Pepper", origen: "México / EE.UU.", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
+      { nombre: "Cayenne Pepper", origen: "Guyana Francesa", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
+      { nombre: "Ají Charapita", origen: "Amazonía Peruana", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
+      { nombre: "Rocoto", origen: "Perú", rango: "30,000 – 100,000 SHU", shuPromedio: 65000 },
+      { nombre: "Thai Chili", origen: "Tailandia", rango: "50,000 – 100,000 SHU", shuPromedio: 75000 },
+      { nombre: "Chiltepin", origen: "México", rango: "50,000 – 100,000 SHU", shuPromedio: 75000 },
+      { nombre: "Habanero", origen: "México", rango: "100,000 – 350,000 SHU", shuPromedio: 225000 },
+      { nombre: "Scotch Bonnet", origen: "Caribe", rango: "100,000 – 350,000 SHU", shuPromedio: 225000 },
+      { nombre: "Ghost Pepper (Bhut Jolokia)", origen: "India", rango: "855,000 – 1,041,427 SHU", shuPromedio: 948214 },
+      { nombre: "Carolina Reaper", origen: "EE.UU.", rango: "1,400,000 – 2,200,000 SHU", shuPromedio: 1800000 }
+    ];
+
+    function calcularIntensidad(shu) {
+      if (shu <= 0) return { velocidad: 0, periodoMs: 0 };
+      const escala = Math.log10(shu + 1) / Math.log10(MAX_SHU + 1);
+      // Fuerza más contrastada: de 250 (suave) a 1500 (máximo)
+      const velocidad = Math.round(250 + escala * 1250);
+      // Arco amplio: de 450 ms (recorrido lento y amplio) a 140 ms (sacudida rápida y amplia)
+      const periodoMs = Math.round(450 - escala * 310);
+      return { velocidad, periodoMs };
+    }
+
+    function escribirMotores(valor) {
+      if (!conectado) return;
+      Protobject.Arduino.contServoWrite({ pin: PIN_SERVO_1, value: valor });
+      Protobject.Arduino.contServoWrite({ pin: PIN_SERVO_2, value: valor });
+    }
+
+    function detenerVibracion() {
+      if (intervaloVibracion) {
+        clearInterval(intervaloVibracion);
+        intervaloVibracion = null;
+      }
+      escribirMotores(0);
+    }
+
+    function iniciarVibracion(velocidad, periodoMs) {
+      detenerVibracion();
+      if (velocidad <= 0) return;
+
+      direccion = 1;
+      escribirMotores(velocidad);
+
+      intervaloVibracion = setInterval(() => {
+        direccion *= -1;
+        escribirMotores(velocidad * direccion);
+      }, periodoMs);
+    }
+
+    const btnConnect = document.getElementById("btnConnect");
+    btnConnect.addEventListener("click", async () => {
+      try {
+        await Protobject.Arduino.start();
+        conectado = true;
+        btnConnect.textContent = "✅ Arduino Conectado (Pines 5 y 6)";
+        btnConnect.classList.add("connected");
+        detenerVibracion();
+      } catch (error) {
+        alert("Error al conectar USB. Verifica que el cable esté conectado y cierra el Arduino IDE.");
+      }
+    });
+
+    const contenedor = document.getElementById("menuAjies");
+    AJIES.forEach((aji) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "aji-btn";
+      btn.innerHTML = `
+        <div class="aji-info">
+          <span>${aji.nombre}</span>
+          <span class="aji-origen">${aji.origen}</span>
+        </div>
+        <span class="shu">${aji.rango}</span>
+      `;
+
+      btn.addEventListener("click", () => {
+        document.querySelectorAll(".aji-btn").forEach((b) => b.classList.remove("active"));
+        btn.classList.add("active");
+
+        const { velocidad, periodoMs } = calcularIntensidad(aji.shuPromedio);
+        document.getElementById("lblNombre").textContent = aji.nombre;
+        document.getElementById("lblShu").textContent = aji.rango;
+        document.getElementById("lblVel").textContent = velocidad > 0 ? `${velocidad} (${periodoMs}ms)` : "0 / 1500";
+
+        iniciarVibracion(velocidad, periodoMs);
+      });
+
+      contenedor.appendChild(btn);
+    });
+
+    document.getElementById("btnStop").addEventListener("click", () => {
+      document.querySelectorAll(".aji-btn").forEach((b) => b.classList.remove("active"));
+      document.getElementById("lblNombre").textContent = "Detenido";
+      document.getElementById("lblShu").textContent = "0 SHU";
+      document.getElementById("lblVel").textContent = "0 / 1500";
+      detenerVibracion();
+    });
+  </script>
+</body>
+</html>

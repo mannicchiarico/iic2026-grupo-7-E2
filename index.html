@@ -1,204 +1,388 @@
 <!DOCTYPE html>
+<!--
+  Atlas del Picor — PANEL DE CONTROL (se abre en la PC: http://localhost:3000)
+  Lo abre solo INICIAR.bat. Aquí se calibra el servo, se ve qué tarjeta leyó el
+  teléfono y se puede activar cualquier ají a mano.
+  Si dice "Servidor desconectado": la ventana negra de INICIAR.bat se cerró.
+-->
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Atlas del Picor — Vibración Física (SHU)</title>
-  <script src="https://app.protobject.com/framework/p.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atlas del Picor — Panel</title>
+  <link rel="icon" href="data:," />
   <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    :root {
+      --bg: #0f1115; --card: #181b22; --border: #2a2f3a;
+      --text: #f3f4f6; --muted: #9ca3af; --primary: #2563eb;
+      --success: #16a34a; --danger: #dc2626; --accent: #f97316; --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
     body {
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      margin: 0; padding: 16px 16px 96px 16px;
-      background: #111111; color: #f5f5f5; min-height: 100vh;
+      font-family: system-ui, -apple-system, sans-serif;
+      margin: 0 auto; padding: 16px 16px 104px;
+      background: var(--bg); color: var(--text); max-width: 760px;
     }
-    header { margin-bottom: 14px; }
-    h1 { font-size: 1.3rem; margin: 0 0 12px 0; text-align: center; }
-    button {
-      cursor: pointer; border: none; border-radius: 12px;
-      font-weight: 600; font-family: inherit;
-      transition: transform 0.08s ease, background-color 0.15s ease;
+    h1 { font-size: 1.35rem; margin: 0 0 14px; text-align: center; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 12px; }
+    .card-title {
+      font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted);
+      margin: 0 0 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px;
     }
+    button { cursor: pointer; border: none; border-radius: 10px; font-weight: 600; font-family: inherit; }
     button:active { transform: scale(0.98); }
-    #btnConnect { background: #2563eb; color: #ffffff; width: 100%; padding: 16px; font-size: 1.05rem; }
-    #btnConnect.connected { background: #16a34a; }
-    .telemetry {
-      display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-      background: #1c1c1c; border: 1px solid #2a2a2a; border-radius: 12px;
-      padding: 12px; margin-bottom: 14px; text-align: center;
+    .estado-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    @media (max-width: 560px) { .estado-grid { grid-template-columns: 1fr; } }
+    .chip { background: #12141a; border: 1px solid #222630; border-radius: 10px; padding: 10px; }
+    .chip span { display: block; font-size: 0.7rem; color: var(--muted); text-transform: uppercase; margin-bottom: 3px; }
+    .chip strong { font-size: 0.92rem; }
+    .ok { color: #4ade80; } .mal { color: #f87171; } .medio { color: #fbbf24; }
+    .telefono { display: grid; grid-template-columns: 170px 1fr; gap: 14px; align-items: start; }
+    @media (max-width: 560px) { .telefono { grid-template-columns: 1fr; justify-items: center; } }
+    #qr { width: 170px; height: 170px; background: #fff; border-radius: 10px; padding: 6px; }
+    .url-box {
+      background: #0b0d13; padding: 8px 10px; border-radius: 8px; font-family: monospace; font-size: 0.85rem;
+      color: #93c5fd; word-break: break-all; border: 1px solid #1e293b; margin: 6px 0;
     }
-    .telemetry-item .label { display: block; font-size: 0.72rem; color: #a3a3a3; text-transform: uppercase; margin-bottom: 4px; }
-    .telemetry-item strong { font-size: 0.9rem; color: #ffffff; }
-    .lista-ajies { display: flex; flex-direction: column; gap: 10px; }
+    ol.pasos { margin: 6px 0 0; padding-left: 18px; font-size: 0.85rem; color: #d1d5db; line-height: 1.45; }
+    select, input[type="number"] {
+      background: #232732; color: #fff; border: 1px solid #374151; border-radius: 8px;
+      padding: 8px 10px; font-size: 0.92rem; font-weight: 600;
+    }
+    input[type="number"] { width: 76px; text-align: center; }
+    .fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+    .range-controls { display: flex; align-items: center; gap: 12px; }
+    input[type="range"] { flex: 1; accent-color: var(--accent); cursor: pointer; }
+    .arc-preview { display: flex; flex-direction: column; align-items: center; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--border); }
+    .arc-info { font-size: 0.82rem; color: var(--muted); margin-top: 4px; }
+    .test-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+    .btn-test { background: #252a36; color: #e5e7eb; border: 1px solid #374151; padding: 10px 6px; font-size: 0.82rem; }
+    .telemetry { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; text-align: center; }
+    .telemetry div { background: #12141a; padding: 8px 4px; border-radius: 8px; border: 1px solid #222630; }
+    .telemetry span { display: block; font-size: 0.68rem; color: var(--muted); text-transform: uppercase; }
+    .telemetry strong { font-size: 0.88rem; }
+    .log-box {
+      margin-top: 8px; background: #0b0d13; border: 1px solid #1e293b; border-radius: 8px; padding: 6px 10px;
+      font-family: monospace; font-size: 0.78rem; color: #34d399; height: 92px; overflow-y: auto; white-space: pre-wrap;
+    }
+    .asignar-barra { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    #btnModoAsignar { background: #374151; color: #fff; padding: 9px 12px; font-size: 0.85rem; }
+    #btnModoAsignar.on { background: var(--warn); color: #111; }
+    #ayudaAsignar { font-size: 0.84rem; color: #fde68a; margin-top: 8px; display: none; }
+    #ayudaAsignar.visible { display: block; }
+    .ultimo { font-size: 0.9rem; }
+    .lista-ajies { display: flex; flex-direction: column; gap: 8px; }
     .aji-btn {
-      background: #1f1f1f; color: #ffffff; padding: 16px;
-      display: flex; justify-content: space-between; align-items: center;
-      font-size: 1.05rem; border: 2px solid #2a2a2a; text-align: left;
+      background: var(--card); color: var(--text); padding: 12px 14px; display: flex; justify-content: space-between;
+      align-items: center; border: 2px solid var(--border); text-align: left; gap: 10px;
     }
-    .aji-btn.active { border-color: #ef4444; background: #381616; }
-    .aji-info { display: flex; flex-direction: column; gap: 2px; }
-    .aji-origen { font-size: 0.78rem; color: #8e8e8e; font-weight: 400; }
-    .shu { font-size: 0.85rem; color: #d4d4d4; font-weight: 500; white-space: nowrap; }
+    .aji-btn.active { border-color: var(--accent); background: #2b1810; }
+    .aji-btn.visto { box-shadow: 0 0 0 2px #fbbf24 inset; }
+    body.asignando .aji-btn { border-style: dashed; border-color: #a16207; }
+    .aji-meta { display: flex; flex-direction: column; gap: 2px; }
+    .aji-sub { font-size: 0.76rem; color: var(--muted); font-weight: 400; }
+    .aji-badge { text-align: right; font-size: 0.8rem; color: #fdba74; font-weight: 600; }
+    .aruco-tag { display: inline-block; background: #1f2937; color: #e5e7eb; border-radius: 6px; padding: 1px 6px; font-size: 0.72rem; margin-top: 3px; }
+    .aruco-tag.sin { background: #7f1d1d; }
     footer {
       position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 16px;
-      background: linear-gradient(to top, #111111 80%, rgba(17, 17, 17, 0));
+      background: linear-gradient(to top, var(--bg) 82%, transparent); display: flex; justify-content: center;
     }
-    #btnStop {
-      width: 100%; background: #dc2626; color: #ffffff; padding: 18px;
-      font-size: 1.1rem; box-shadow: 0 4px 20px rgba(0, 0, 0, 0.7);
-    }
+    #btnStop { width: 100%; max-width: 760px; background: var(--danger); color: #fff; padding: 16px; font-size: 1.05rem; box-shadow: 0 6px 24px rgba(220,38,38,.45); }
+    #avisoServidor { display: none; background: #7f1d1d; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-size: 0.9rem; }
+    #avisoServidor.visible { display: block; }
   </style>
 </head>
 <body>
+  <h1>🌶️ Atlas del Picor — Panel de control</h1>
 
-  <header>
-    <h1>🌶️ Escala Scoville (SHU)</h1>
-    <button id="btnConnect" type="button">Conectar Arduino (USB OTG)</button>
-  </header>
+  <div id="avisoServidor">⚠️ Servidor desconectado. Revisa que la ventana negra de <b>INICIAR.bat</b> siga abierta. Reintentando…</div>
 
-  <section class="telemetry" aria-live="polite">
-    <div class="telemetry-item">
-      <span class="label">Ají activo</span>
-      <strong id="lblNombre">Ninguno</strong>
+  <!-- 1. Estado -->
+  <section class="card">
+    <div class="card-title"><span>1. Estado del sistema</span></div>
+    <div class="estado-grid">
+      <div class="chip"><span>Arduino (USB)</span><strong id="estArduino" class="medio">Buscando…</strong></div>
+      <div class="chip"><span>Teléfonos escaneando</span><strong id="estTelefonos" class="medio">0</strong></div>
+      <div class="chip"><span>Servidor</span><strong id="estServidor" class="medio">Conectando…</strong></div>
     </div>
-    <div class="telemetry-item">
-      <span class="label">Intensidad</span>
-      <strong id="lblShu">0 SHU</strong>
+  </section>
+
+  <!-- 2. Teléfono -->
+  <section class="card">
+    <div class="card-title"><span>2. Conectar el teléfono</span></div>
+    <div class="telefono">
+      <img id="qr" alt="QR para abrir el escáner en el teléfono" />
+      <div>
+        <div class="fila" style="margin-bottom:4px;">
+          <label for="selectIp" style="font-size:0.85rem;">Conexión:</label>
+          <select id="selectIp" style="flex:1; font-size:0.82rem;"></select>
+        </div>
+        <div class="url-box" id="urlEscaner">…</div>
+        <ol class="pasos">
+          <li>Escanea este QR con la cámara del teléfono (o escribe la dirección).</li>
+          <li id="pasoCert">Saldrá <b>"La conexión no es privada"</b>: toca <b>Configuración avanzada → Continuar</b>. Es normal: el certificado lo creó esta PC.</li>
+          <li>Permite el uso de la cámara y apunta a las tarjetas ArUco.</li>
+        </ol>
+      </div>
     </div>
-    <div class="telemetry-item">
-      <span class="label">Vibración (P5 · P6)</span>
-      <strong id="lblVel">0 / 1500</strong>
+  </section>
+
+  <!-- 3. Calibración -->
+  <section class="card">
+    <div class="card-title"><span>3. Calibración del recorrido (máx 180°)</span><span id="lblLimites">45° ↔ 135°</span></div>
+    <div class="fila">
+      <label for="selectPin" style="font-size:0.9rem;">Servo que se mueve:</label>
+      <select id="selectPin">
+        <option value="5">Pin 5 (el del pin 6 queda en 90°)</option>
+        <option value="6">Pin 6 (el del pin 5 queda en 90°)</option>
+      </select>
+    </div>
+    <div class="range-controls">
+      <input type="range" id="sliderRango" min="10" max="180" step="2" value="90" />
+      <input type="number" id="numRango" min="10" max="180" step="2" value="90" />
+      <span style="font-weight:700;">°</span>
+    </div>
+    <div class="arc-preview">
+      <svg width="200" height="105" viewBox="0 0 200 105" aria-hidden="true">
+        <path d="M 15 95 A 85 85 0 0 1 185 95" fill="none" stroke="#2a2f3a" stroke-width="10" stroke-linecap="round" />
+        <path id="svgArcoActivo" d="" fill="none" stroke="#f97316" stroke-width="10" stroke-linecap="round" />
+        <line x1="100" y1="95" x2="100" y2="10" stroke="#4b5563" stroke-width="1.5" stroke-dasharray="4 3" />
+        <circle cx="100" cy="95" r="5" fill="#f97316" />
+      </svg>
+      <div class="arc-info" id="lblArcInfo"></div>
+    </div>
+    <div class="test-btns">
+      <button type="button" class="btn-test" data-prueba="MIN">◀ Ir a mínimo</button>
+      <button type="button" class="btn-test" data-prueba="CEN">▲ Centrar (90°)</button>
+      <button type="button" class="btn-test" data-prueba="MAX">Ir a máximo ▶</button>
+    </div>
+  </section>
+
+  <!-- 4. Telemetría -->
+  <section class="card">
+    <div class="telemetry">
+      <div><span>Ají</span><strong id="lblNombre">—</strong></div>
+      <div><span>Origen</span><strong id="lblOrigen">—</strong></div>
+      <div><span>Nivel (N)</span><strong id="lblNivel">N:0</strong></div>
+      <div><span>Rango</span><strong id="lblRangoTel">90°</strong></div>
+    </div>
+    <div class="log-box" id="logArduino">Arduino dice: esperando conexión…</div>
+  </section>
+
+  <!-- 5. Tarjetas -->
+  <section class="card">
+    <div class="card-title"><span>4. Tarjetas ArUco</span><span class="ultimo">Última vista: <b id="lblUltimo">—</b></span></div>
+    <div class="asignar-barra">
+      <button type="button" id="btnModoAsignar">🏷️ Reasignar tarjetas</button>
+      <span style="font-size:0.82rem; color:var(--muted);">Tus tarjetas 0–24 ya están asignadas en orden. Solo úsalo si cambias alguna.</span>
+    </div>
+    <div id="ayudaAsignar">
+      Modo reasignar: el motor NO se mueve. Muestra una tarjeta al teléfono y luego toca el ají que le corresponde.
+      <button type="button" id="btnAsignarDetener" style="margin-left:6px; background:#7f1d1d; color:#fff; padding:5px 9px; font-size:0.8rem;">Usar como "Detener"</button>
+      <button type="button" id="btnMapeoDefecto" style="margin-left:6px; background:#374151; color:#fff; padding:5px 9px; font-size:0.8rem;">Volver al orden 0–24</button>
     </div>
   </section>
 
   <main class="lista-ajies" id="menuAjies"></main>
 
-  <footer>
-    <button id="btnStop" type="button">⏹ DETENER VIBRACIÓN</button>
-  </footer>
+  <footer><button id="btnStop" type="button">⏹ DETENER Y CENTRAR (N:0)</button></footer>
 
+  <script src="ajies.js"></script>
   <script>
-    const PIN_SERVO_1 = 5;
-    const PIN_SERVO_2 = 6;
-    const MAX_SHU = 1800000;
+    const CENTRO = 90;
+    const $ = id => document.getElementById(id);
+    let ws = null;
+    let colaWS = [];             // mensajes que esperan a que el WebSocket abra
+    let estadoServidor = null;   // último ESTADO recibido
+    let ultimoAruco = null;
 
-    let conectado = false;
-    let intervaloVibracion = null;
-    let direccion = 1;
-
-    const AJIES = [
-      { nombre: "Bell Pepper (Pimiento Moro)", origen: "América", rango: "0 SHU", shuPromedio: 0 },
-      { nombre: "Shishito", origen: "Japón", rango: "50 – 200 SHU", shuPromedio: 125 },
-      { nombre: "Banana Pepper", origen: "Internacional", rango: "0 – 500 SHU", shuPromedio: 250 },
-      { nombre: "Pimento (Pimiento Dulce)", origen: "España", rango: "100 – 500 SHU", shuPromedio: 300 },
-      { nombre: "Padrón Pepper", origen: "España", rango: "500 – 2,500 SHU", shuPromedio: 1500 },
-      { nombre: "Poblano Pepper", origen: "México", rango: "1,000 – 2,000 SHU", shuPromedio: 1500 },
-      { nombre: "Pasilla Pepper", origen: "México", rango: "1,000 – 2,500 SHU", shuPromedio: 1750 },
-      { nombre: "Espelette Pepper", origen: "Francia", rango: "1,500 – 4,000 SHU", shuPromedio: 2750 },
-      { nombre: "Guajillo Pepper", origen: "México", rango: "2,500 – 5,000 SHU", shuPromedio: 3750 },
-      { nombre: "Jalapeño", origen: "México", rango: "2,500 – 8,000 SHU", shuPromedio: 5250 },
-      { nombre: "Chipotle", origen: "México", rango: "2,500 – 8,000 SHU", shuPromedio: 5250 },
-      { nombre: "Serrano Pepper", origen: "México", rango: "10,000 – 23,000 SHU", shuPromedio: 16500 },
-      { nombre: "Chile de Árbol", origen: "México", rango: "15,000 – 30,000 SHU", shuPromedio: 22500 },
-      { nombre: "Calabrian Chili", origen: "Italia", rango: "25,000 – 40,000 SHU", shuPromedio: 32500 },
-      { nombre: "Ají Amarillo", origen: "Perú", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
-      { nombre: "Tabasco Pepper", origen: "México / EE.UU.", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
-      { nombre: "Cayenne Pepper", origen: "Guyana Francesa", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
-      { nombre: "Ají Charapita", origen: "Amazonía Peruana", rango: "30,000 – 50,000 SHU", shuPromedio: 40000 },
-      { nombre: "Rocoto", origen: "Perú", rango: "30,000 – 100,000 SHU", shuPromedio: 65000 },
-      { nombre: "Thai Chili", origen: "Tailandia", rango: "50,000 – 100,000 SHU", shuPromedio: 75000 },
-      { nombre: "Chiltepin", origen: "México", rango: "50,000 – 100,000 SHU", shuPromedio: 75000 },
-      { nombre: "Habanero", origen: "México", rango: "100,000 – 350,000 SHU", shuPromedio: 225000 },
-      { nombre: "Scotch Bonnet", origen: "Caribe", rango: "100,000 – 350,000 SHU", shuPromedio: 225000 },
-      { nombre: "Ghost Pepper (Bhut Jolokia)", origen: "India", rango: "855,000 – 1,041,427 SHU", shuPromedio: 948214 },
-      { nombre: "Carolina Reaper", origen: "EE.UU.", rango: "1,400,000 – 2,200,000 SHU", shuPromedio: 1800000 }
-    ];
-
-    function calcularIntensidad(shu) {
-      if (shu <= 0) return { velocidad: 0, periodoMs: 0 };
-      const escala = Math.log10(shu + 1) / Math.log10(MAX_SHU + 1);
-      // Fuerza más contrastada: de 250 (suave) a 1500 (máximo)
-      const velocidad = Math.round(250 + escala * 1250);
-      // Arco amplio: de 450 ms (recorrido lento y amplio) a 140 ms (sacudida rápida y amplia)
-      const periodoMs = Math.round(450 - escala * 310);
-      return { velocidad, periodoMs };
+    // ---------- WebSocket con cola y reconexión ----------
+    function enviar(obj) {
+      const txt = JSON.stringify(obj);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(txt); else colaWS.push(txt);
+    }
+    function conectarWS() {
+      const proto = location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${proto}//${location.host}`);
+      ws.onopen = () => {
+        $("avisoServidor").classList.remove("visible");
+        $("estServidor").textContent = "En línea"; $("estServidor").className = "ok";
+        ws.send(JSON.stringify({ tipo: "HOLA", rol: "panel" }));
+        colaWS.splice(0).forEach(t => ws.send(t));
+      };
+      ws.onmessage = ev => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.tipo === "ESTADO") { aplicarEstado(m); if ((m.tunel || null) !== (tunelActual || null)) cargarInfo(); }
+        else if (m.tipo === "TUNEL") cargarInfo();
+        else if (m.tipo === "ARDUINO_LOG") agregarLog(m.texto);
+        else if (m.tipo === "ACTIVADO") { if (!m.arduino) agregarLog("⚠️ Arduino no conectado: el nivel no llegó al motor"); }
+        else if (m.tipo === "ARUCO_SIN_ASIGNAR") agregarLog(`Tarjeta #${m.n} sin ají asignado`);
+      };
+      ws.onclose = () => {
+        $("avisoServidor").classList.add("visible");
+        $("estServidor").textContent = "Desconectado"; $("estServidor").className = "mal";
+        setTimeout(conectarWS, 2000);
+      };
     }
 
-    function escribirMotores(valor) {
-      if (!conectado) return;
-      Protobject.Arduino.contServoWrite({ pin: PIN_SERVO_1, value: valor });
-      Protobject.Arduino.contServoWrite({ pin: PIN_SERVO_2, value: valor });
+    function agregarLog(texto) {
+      const caja = $("logArduino");
+      if (caja.textContent.startsWith("Arduino dice: esperando")) caja.textContent = "";
+      const hora = new Date().toLocaleTimeString("es-MX", { hour12: false });
+      caja.textContent += `[${hora}] ${texto}\n`;
+      const lineas = caja.textContent.split("\n");
+      if (lineas.length > 60) caja.textContent = lineas.slice(-60).join("\n");
+      caja.scrollTop = caja.scrollHeight;
     }
 
-    function detenerVibracion() {
-      if (intervaloVibracion) {
-        clearInterval(intervaloVibracion);
-        intervaloVibracion = null;
+    // ---------- Aplicar estado del servidor ----------
+    function aplicarEstado(e) {
+      estadoServidor = e;
+      const a = e.arduino;
+      $("estArduino").textContent = a.conectado ? `Conectado (${a.puerto})` : "No encontrado";
+      $("estArduino").className = a.conectado ? "ok" : "mal";
+      $("estTelefonos").textContent = e.escaneres;
+      $("estTelefonos").className = e.escaneres > 0 ? "ok" : "medio";
+
+      if (document.activeElement !== $("sliderRango") && document.activeElement !== $("numRango")) {
+        $("sliderRango").value = e.rango; dibujarRango(e.rango);
       }
-      escribirMotores(0);
-    }
+      $("selectPin").value = String(e.pin);
 
-    function iniciarVibracion(velocidad, periodoMs) {
-      detenerVibracion();
-      if (velocidad <= 0) return;
-
-      direccion = 1;
-      escribirMotores(velocidad);
-
-      intervaloVibracion = setInterval(() => {
-        direccion *= -1;
-        escribirMotores(velocidad * direccion);
-      }, periodoMs);
-    }
-
-    const btnConnect = document.getElementById("btnConnect");
-    btnConnect.addEventListener("click", async () => {
-      try {
-        await Protobject.Arduino.start();
-        conectado = true;
-        btnConnect.textContent = "✅ Arduino Conectado (Pines 5 y 6)";
-        btnConnect.classList.add("connected");
-        detenerVibracion();
-      } catch (error) {
-        alert("Error al conectar USB. Verifica que el cable esté conectado y cierra el Arduino IDE.");
+      if (e.activo) {
+        $("lblNombre").textContent = e.activo.nombre;
+        $("lblOrigen").textContent = e.activo.origen;
+        $("lblNivel").textContent = `N:${e.activo.nivel}`;
+      } else {
+        $("lblNivel").textContent = "N:0";
       }
-    });
+      document.querySelectorAll(".aji-btn").forEach(b =>
+        b.classList.toggle("active", !!e.activo && b.dataset.id === e.activo.id));
 
-    const contenedor = document.getElementById("menuAjies");
-    AJIES.forEach((aji) => {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "aji-btn";
-      btn.innerHTML = `
-        <div class="aji-info">
-          <span>${aji.nombre}</span>
-          <span class="aji-origen">${aji.origen}</span>
-        </div>
-        <span class="shu">${aji.rango}</span>
-      `;
+      ultimoAruco = e.ultimoAruco;
+      if (ultimoAruco) {
+        const dest = ultimoAruco.asignado;
+        const nombre = dest === "DETENER" ? "Detener" : (dest ? (ajiPorId(dest) || {}).nombre : "sin asignar");
+        $("lblUltimo").textContent = `#${ultimoAruco.n} → ${nombre}`;
+      }
+      document.querySelectorAll(".aji-btn").forEach(b =>
+        b.classList.toggle("visto", e.modoAsignar && !!ultimoAruco && b.dataset.id === ultimoAruco.asignado));
 
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".aji-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
+      $("btnModoAsignar").classList.toggle("on", e.modoAsignar);
+      $("btnModoAsignar").textContent = e.modoAsignar ? "✅ Terminar de reasignar" : "🏷️ Reasignar tarjetas";
+      $("ayudaAsignar").classList.toggle("visible", e.modoAsignar);
+      document.body.classList.toggle("asignando", e.modoAsignar);
 
-        const { velocidad, periodoMs } = calcularIntensidad(aji.shuPromedio);
-        document.getElementById("lblNombre").textContent = aji.nombre;
-        document.getElementById("lblShu").textContent = aji.rango;
-        document.getElementById("lblVel").textContent = velocidad > 0 ? `${velocidad} (${periodoMs}ms)` : "0 / 1500";
-
-        iniciarVibracion(velocidad, periodoMs);
+      // Etiqueta con el número de tarjeta de cada ají
+      const inverso = {};
+      Object.entries(e.mapeo).forEach(([n, id]) => { inverso[id] = n; });
+      document.querySelectorAll(".aji-btn").forEach(b => {
+        const tag = b.querySelector(".aruco-tag");
+        const n = inverso[b.dataset.id];
+        tag.textContent = n !== undefined ? `Tarjeta #${n}` : "Sin tarjeta";
+        tag.classList.toggle("sin", n === undefined);
       });
+    }
 
-      contenedor.appendChild(btn);
+    // ---------- Calibración ----------
+    function polar(cx, cy, r, grados) {
+      const rad = ((180 - grados) * Math.PI) / 180;
+      return { x: cx + r * Math.cos(rad), y: cy - r * Math.sin(rad) };
+    }
+    function dibujarRango(r) {
+      r = Math.max(10, Math.min(180, parseInt(r, 10) || 90)); r -= r % 2;
+      $("sliderRango").value = r; $("numRango").value = r;
+      const min = CENTRO - r / 2, max = CENTRO + r / 2;
+      $("lblLimites").textContent = `${min}° ↔ ${max}°`;
+      $("lblRangoTel").textContent = `${r}°`;
+      $("lblArcInfo").textContent = `Recorrido fijo: ${r}° (${r / 2}° a cada lado del centro)`;
+      const a = polar(100, 95, 85, min), b = polar(100, 95, 85, max);
+      $("svgArcoActivo").setAttribute("d", `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} A 85 85 0 0 1 ${b.x.toFixed(1)} ${b.y.toFixed(1)}`);
+      return r;
+    }
+    let temporizadorRango = null;
+    function cambiarRango(valor) {
+      const r = dibujarRango(valor);
+      clearTimeout(temporizadorRango);
+      temporizadorRango = setTimeout(() => enviar({ tipo: "RANGO", valor: r }), 120);
+    }
+    $("sliderRango").addEventListener("input", e => cambiarRango(e.target.value));
+    $("numRango").addEventListener("change", e => cambiarRango(e.target.value));
+    $("selectPin").addEventListener("change", e => enviar({ tipo: "PIN", valor: Number(e.target.value) }));
+    document.querySelectorAll("[data-prueba]").forEach(b =>
+      b.addEventListener("click", () => {
+        enviar({ tipo: "PRUEBA", pos: b.dataset.prueba });
+        $("lblNombre").textContent = b.textContent.trim(); $("lblOrigen").textContent = "calibración";
+      }));
+
+    // ---------- Teléfono: QR y URL ----------
+    // "publica" = túnel por internet (funciona desde cualquier red); las demás son IPs del WiFi local
+    let tunelActual = null;
+    async function cargarInfo() {
+      try {
+        const info = await (await fetch("/info")).json();
+        const sel = $("selectIp");
+        const elegido = sel.value;
+        sel.innerHTML = "";
+        const opciones = [];
+        if (info.publica) opciones.push({ valor: "publica", texto: "🌍 Internet — funciona en cualquier red (recomendado)", url: info.publica });
+        info.ips.forEach(i => opciones.push({ valor: i.ip, texto: `📶 Mismo WiFi: ${i.ip} — ${i.interfaz}`, url: i.url }));
+        if (!opciones.length) { $("urlEscaner").textContent = "Esperando red o túnel…"; $("qr").removeAttribute("src"); return; }
+        opciones.forEach(o => {
+          const op = document.createElement("option");
+          op.value = o.valor; op.textContent = o.texto; sel.appendChild(op);
+        });
+        if (opciones.some(o => o.valor === elegido)) sel.value = elegido;
+        const mostrar = () => {
+          const o = opciones.find(x => x.valor === sel.value);
+          $("urlEscaner").textContent = o.url;
+          $("qr").src = `/qr.svg?ip=${encodeURIComponent(o.valor)}&t=${Date.now()}`;
+          $("pasoCert").style.display = o.valor === "publica" ? "none" : "";
+        };
+        sel.onchange = mostrar; mostrar();
+        tunelActual = info.publica ? info.publica.replace(/\/escaner\.html$/, "") : null;
+      } catch { setTimeout(cargarInfo, 2000); }
+    }
+
+    // ---------- Lista de ajíes ----------
+    const menu = $("menuAjies");
+    AJIES.forEach(aji => {
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.className = "aji-btn"; btn.dataset.id = aji.id;
+      btn.innerHTML = `
+        <div class="aji-meta">
+          <strong>${aji.nombre}</strong>
+          <span class="aji-sub">${aji.origen} · Nivel N:${calcularNivel(aji.shu)}</span>
+          <span><span class="aruco-tag">Tarjeta #${aji.aruco}</span></span>
+        </div>
+        <div class="aji-badge">${aji.rangoShu}</div>`;
+      btn.addEventListener("click", () => {
+        if (estadoServidor && estadoServidor.modoAsignar) {
+          if (!ultimoAruco) { alert("Primero muestra una tarjeta a la cámara del teléfono."); return; }
+          enviar({ tipo: "ASIGNAR", n: ultimoAruco.n, destino: aji.id });
+        } else {
+          enviar({ tipo: "ACTIVAR_AJI", id: aji.id, origen: "panel" });
+        }
+      });
+      menu.appendChild(btn);
     });
 
-    document.getElementById("btnStop").addEventListener("click", () => {
-      document.querySelectorAll(".aji-btn").forEach((b) => b.classList.remove("active"));
-      document.getElementById("lblNombre").textContent = "Detenido";
-      document.getElementById("lblShu").textContent = "0 SHU";
-      document.getElementById("lblVel").textContent = "0 / 1500";
-      detenerVibracion();
+    $("btnModoAsignar").addEventListener("click", () =>
+      enviar({ tipo: "MODO_ASIGNAR", activo: !(estadoServidor && estadoServidor.modoAsignar) }));
+    $("btnAsignarDetener").addEventListener("click", () => {
+      if (!ultimoAruco) { alert("Primero muestra una tarjeta a la cámara del teléfono."); return; }
+      enviar({ tipo: "ASIGNAR", n: ultimoAruco.n, destino: "DETENER" });
     });
+    $("btnMapeoDefecto").addEventListener("click", () => {
+      if (confirm("¿Volver a la asignación original (tarjeta 0 = Pimiento morrón … 24 = Carolina Reaper)?"))
+        enviar({ tipo: "MAPEO_DEFECTO" });
+    });
+    $("btnStop").addEventListener("click", () => enviar({ tipo: "DETENER", origen: "panel" }));
+
+    dibujarRango(90);
+    cargarInfo();
+    conectarWS();
   </script>
 </body>
 </html>

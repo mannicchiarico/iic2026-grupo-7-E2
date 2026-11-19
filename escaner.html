@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<!--
+  Atlas del Picor — ESCÁNER ArUco (se abre en el TELÉFONO)
+  Dirección: https://IP_DE_LA_PC:3443/escaner.html (el panel de la PC muestra un QR).
+  Errores comunes:
+  · "No se puede usar la cámara": hay que abrir la dirección con https://, no http://.
+  · "La conexión no es privada": normal; tocar Configuración avanzada → Continuar.
+  · No conecta: el teléfono y la PC deben estar en el MISMO WiFi, y el Firewall de
+    Windows debe permitir Node.js en redes privadas.
+  Tarjetas: ArUco 4x4 (DICT_4X4_50), IDs 0–24, papel mate de al menos 4–5 cm con margen blanco.
+-->
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Atlas del Picor — Escáner</title>
+  <link rel="icon" href="data:," />
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; height: 100%; background: #000; color: #f3f4f6; font-family: system-ui, -apple-system, sans-serif; overflow: hidden; }
+    #escena { position: fixed; inset: 0; }
+    video, #capa { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+    #barra {
+      position: fixed; top: 0; left: 0; right: 0; padding: 10px 12px; display: flex; gap: 8px; flex-wrap: wrap;
+      background: linear-gradient(to bottom, rgba(0,0,0,.75), transparent); font-size: 0.78rem; z-index: 2;
+    }
+    .pill { background: rgba(17,24,39,.85); border: 1px solid #374151; border-radius: 999px; padding: 4px 10px; }
+    .ok { color: #4ade80; } .mal { color: #f87171; } .medio { color: #fbbf24; }
+    #guia {
+      position: fixed; left: 50%; top: 45%; width: 58vmin; height: 58vmin; transform: translate(-50%, -50%);
+      border: 3px dashed rgba(255,255,255,.35); border-radius: 18px; z-index: 1; pointer-events: none;
+    }
+    #panel {
+      position: fixed; left: 10px; right: 10px; bottom: 10px; z-index: 2;
+      background: rgba(17,19,26,.92); border: 1px solid #2a2f3a; border-radius: 16px; padding: 12px 14px;
+    }
+    #nombre { font-size: 1.25rem; font-weight: 700; }
+    #detalle { font-size: 0.85rem; color: #9ca3af; margin-top: 2px; }
+    .barra-nivel { height: 10px; border-radius: 6px; background: #1f2937; margin: 10px 0; overflow: hidden; }
+    #relleno { height: 100%; width: 0; background: linear-gradient(to right, #16a34a, #eab308, #dc2626); transition: width .3s; }
+    .botones { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; }
+    button { border: none; border-radius: 10px; font-weight: 700; font-family: inherit; padding: 13px; font-size: 0.95rem; cursor: pointer; }
+    #btnCamara { background: #374151; color: #fff; }
+    #btnDetener { background: #dc2626; color: #fff; }
+    #error {
+      display: none; position: fixed; inset: 0; z-index: 5; background: #0f1115; padding: 24px; overflow-y: auto;
+      font-size: 0.95rem; line-height: 1.5;
+    }
+    #error.visible { display: block; }
+    #error code { background: #1f2937; padding: 2px 6px; border-radius: 6px; word-break: break-all; }
+    #destello { position: fixed; inset: 0; background: #f97316; opacity: 0; pointer-events: none; z-index: 3; transition: opacity .35s; }
+  </style>
+</head>
+<body>
+  <div id="escena">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="capa"></canvas>
+  </div>
+  <div id="guia"></div>
+  <div id="destello"></div>
+
+  <div id="barra">
+    <span class="pill">Servidor: <b id="estServidor" class="medio">conectando…</b></span>
+    <span class="pill">Arduino: <b id="estArduino" class="medio">—</b></span>
+    <span class="pill" id="pillAsignar" style="display:none; color:#fde68a;">🏷️ Modo reasignar (no mueve el motor)</span>
+  </div>
+
+  <div id="panel">
+    <div id="nombre">Apunta a una tarjeta</div>
+    <div id="detalle">Coloca el marcador dentro del recuadro</div>
+    <div class="barra-nivel"><div id="relleno"></div></div>
+    <div class="botones">
+      <button id="btnCamara" type="button">🔄 Cámara</button>
+      <button id="btnDetener" type="button">⏹ Detener</button>
+    </div>
+  </div>
+
+  <div id="error"></div>
+
+  <!-- Detector ArUco (js-aruco2, servido localmente por el servidor; no necesita internet) -->
+  <script src="/lib/aruco/cv.js"></script>
+  <script src="/lib/aruco/aruco.js"></script>
+  <script src="/lib/aruco/dictionaries/aruco_4x4_1000.js"></script>
+  <script src="ajies.js"></script>
+  <script>
+    // ---------- Parámetros ajustables (los mismos del contrato del grupo) ----------
+    const CUADROS_PARA_ACEPTAR = 4;   // cuadros seguidos con el mismo ID para aceptarlo
+    const MS_SIN_TARJETA = 1500;      // tras este tiempo sin tarjeta, se puede volver a leer la misma
+    const ANCHO_PROCESO = 640;        // la imagen se reduce a este ancho para detectar más rápido
+    const MS_ENTRE_CUADROS = 66;      // ~15 cuadros por segundo
+
+    const $ = id => document.getElementById(id);
+    const video = $("video");
+    const capa = $("capa");
+    const ctxCapa = capa.getContext("2d");
+    const lienzo = document.createElement("canvas");
+    const ctx = lienzo.getContext("2d", { willReadFrequently: true });
+    // maxHammingDistance 1 = solo lecturas exactas (evita confundir tarjetas)
+    const detector = new AR.Detector({ dictionaryName: "ARUCO_4X4_1000", maxHammingDistance: 1 });
+
+    let mapeo = {};                 // { "id ArUco": "id ají" | "DETENER" } (viene del servidor)
+    let modoAsignar = false;
+    let candidato = null, cuentaCandidato = 0;
+    let ultimoAceptado = null, ultimoVistoMs = 0;
+    let camaraTrasera = true, flujo = null;
+
+    // ---------- WebSocket ----------
+    let ws = null, cola = [];
+    function enviar(obj) {
+      const t = JSON.stringify(obj);
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(t); else cola.push(t);
+    }
+    function conectarWS() {
+      ws = new WebSocket(`${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}`);
+      ws.onopen = () => {
+        $("estServidor").textContent = "en línea"; $("estServidor").className = "ok";
+        ws.send(JSON.stringify({ tipo: "HOLA", rol: "escaner" }));
+        cola.splice(0).forEach(t => ws.send(t));
+      };
+      ws.onmessage = ev => {
+        let m; try { m = JSON.parse(ev.data); } catch { return; }
+        if (m.tipo === "ESTADO") {
+          mapeo = m.mapeo || {};
+          modoAsignar = !!m.modoAsignar;
+          $("pillAsignar").style.display = modoAsignar ? "" : "none";
+          $("estArduino").textContent = m.arduino.conectado ? "conectado" : "no conectado";
+          $("estArduino").className = m.arduino.conectado ? "ok" : "mal";
+        } else if (m.tipo === "DETENIDO") {
+          mostrar("Detenido", "Motor centrado en 90°", 0);
+        }
+      };
+      ws.onclose = () => {
+        $("estServidor").textContent = "desconectado"; $("estServidor").className = "mal";
+        setTimeout(conectarWS, 2000);
+      };
+    }
+
+    // ---------- Interfaz ----------
+    function mostrar(nombre, detalle, nivel) {
+      $("nombre").textContent = nombre;
+      $("detalle").textContent = detalle;
+      $("relleno").style.width = `${nivel * 10}%`;
+    }
+    function destello() {
+      $("destello").style.opacity = 0.35;
+      setTimeout(() => ($("destello").style.opacity = 0), 150);
+      if (navigator.vibrate) navigator.vibrate(60);
+    }
+
+    // ---------- Al aceptar una tarjeta ----------
+    function tarjetaAceptada(n) {
+      enviar({ tipo: "ARUCO", n });
+      destello();
+      const destino = mapeo[String(n)];
+      if (modoAsignar) {
+        mostrar(`Tarjeta #${n}`, "Ahora toca en el panel de la PC el ají que le corresponde", 0);
+      } else if (destino === "DETENER") {
+        mostrar("Detener", `Tarjeta #${n}`, 0);
+      } else if (destino) {
+        const aji = ajiPorId(destino);
+        const nivel = calcularNivel(aji.shu);
+        mostrar(aji.nombre, `Tarjeta #${n} · ${aji.rangoShu} · Nivel ${nivel}/10`, nivel);
+      } else {
+        mostrar(`Tarjeta #${n}`, "Esta tarjeta no tiene un ají asignado", 0);
+      }
+    }
+
+    // ---------- Bucle de detección ----------
+    function procesarCuadro() {
+      if (video.readyState < 2 || !video.videoWidth) return;
+      const escala = Math.min(1, ANCHO_PROCESO / video.videoWidth);
+      const w = Math.round(video.videoWidth * escala), h = Math.round(video.videoHeight * escala);
+      if (lienzo.width !== w) { lienzo.width = w; lienzo.height = h; }
+      ctx.drawImage(video, 0, 0, w, h);
+      const marcadores = detector.detect(ctx.getImageData(0, 0, w, h));
+      dibujar(marcadores, w, h);
+
+      // Si hay varias tarjetas, usamos la más grande (la más cercana)
+      let mejor = null, mejorArea = 0;
+      for (const m of marcadores) {
+        if (m.id >= 1000) continue;
+        const c = m.corners;
+        const area = Math.abs((c[2].x - c[0].x) * (c[3].y - c[1].y) - (c[3].x - c[1].x) * (c[2].y - c[0].y)) / 2;
+        // En modo reasignar aceptamos cualquier tarjeta; si no, solo las que tienen ají
+        if (!modoAsignar && mapeo[String(m.id)] === undefined) continue;
+        if (area > mejorArea) { mejor = m; mejorArea = area; }
+      }
+
+      const ahora = performance.now();
+      if (mejor) {
+        ultimoVistoMs = ahora;
+        if (mejor.id === candidato) cuentaCandidato++; else { candidato = mejor.id; cuentaCandidato = 1; }
+        if (cuentaCandidato >= CUADROS_PARA_ACEPTAR && mejor.id !== ultimoAceptado) {
+          ultimoAceptado = mejor.id;
+          tarjetaAceptada(mejor.id);
+        }
+      } else {
+        candidato = null; cuentaCandidato = 0;
+        if (ultimoAceptado !== null && ahora - ultimoVistoMs > MS_SIN_TARJETA) ultimoAceptado = null;
+      }
+    }
+
+    // Dibuja los contornos sobre el video (verde = tarjeta conocida, gris = desconocida)
+    function dibujar(marcadores, w, h) {
+      const cw = capa.clientWidth, ch = capa.clientHeight;
+      if (capa.width !== cw) { capa.width = cw; capa.height = ch; }
+      ctxCapa.clearRect(0, 0, cw, ch);
+      // object-fit: cover → misma escala y recorte que el video
+      const s = Math.max(cw / w, ch / h);
+      const dx = (cw - w * s) / 2, dy = (ch - h * s) / 2;
+      const espejo = !camaraTrasera;
+      for (const m of marcadores) {
+        const conocida = mapeo[String(m.id)] !== undefined;
+        ctxCapa.strokeStyle = conocida ? "#22c55e" : "#9ca3af";
+        ctxCapa.lineWidth = 4;
+        ctxCapa.beginPath();
+        m.corners.forEach((p, i) => {
+          let x = p.x * s + dx; const y = p.y * s + dy;
+          if (espejo) x = cw - x;
+          i ? ctxCapa.lineTo(x, y) : ctxCapa.moveTo(x, y);
+        });
+        ctxCapa.closePath(); ctxCapa.stroke();
+        let x0 = m.corners[0].x * s + dx; if (espejo) x0 = cw - x0;
+        const y0 = m.corners[0].y * s + dy;
+        const destino = mapeo[String(m.id)];
+        const etiqueta = destino === "DETENER" ? "Detener" : destino ? (ajiPorId(destino) || {}).nombre : "sin ají";
+        ctxCapa.font = "bold 15px system-ui";
+        const texto = `#${m.id} ${etiqueta}`;
+        ctxCapa.fillStyle = "rgba(0,0,0,.7)";
+        ctxCapa.fillRect(x0, y0 - 24, ctxCapa.measureText(texto).width + 10, 22);
+        ctxCapa.fillStyle = conocida ? "#86efac" : "#e5e7eb";
+        ctxCapa.fillText(texto, x0 + 5, y0 - 8);
+      }
+    }
+
+    let ultimoCuadroMs = 0;
+    function bucle(t) {
+      if (t - ultimoCuadroMs >= MS_ENTRE_CUADROS) {
+        ultimoCuadroMs = t;
+        try { procesarCuadro(); } catch (e) { console.error(e); }
+      }
+      requestAnimationFrame(bucle);
+    }
+
+    // ---------- Cámara ----------
+    async function iniciarCamara() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        const urlSegura = `https://${location.hostname}:3443${location.pathname}`;
+        $("error").innerHTML = `
+          <h2>No se puede usar la cámara</h2>
+          <p>El navegador solo permite la cámara en páginas seguras (<b>https</b>).
+          Abre esta dirección en su lugar:</p>
+          <p><code>${urlSegura}</code></p>
+          <p><a href="${urlSegura}" style="color:#93c5fd;">Abrir versión segura →</a></p>
+          <p>Si aparece "La conexión no es privada", toca <b>Configuración avanzada → Continuar</b>.</p>`;
+        $("error").classList.add("visible");
+        return;
+      }
+      if (flujo) flujo.getTracks().forEach(t => t.stop());
+      try {
+        flujo = await navigator.mediaDevices.getUserMedia({
+          audio: false,
+          video: { facingMode: camaraTrasera ? "environment" : "user", width: { ideal: 1280 }, height: { ideal: 720 } }
+        });
+        video.srcObject = flujo;
+        video.style.transform = camaraTrasera ? "" : "scaleX(-1)";
+        await video.play();
+        $("error").classList.remove("visible");
+      } catch (e) {
+        $("error").innerHTML = `
+          <h2>No se pudo abrir la cámara</h2>
+          <p>${e.name === "NotAllowedError"
+            ? "El permiso de cámara está bloqueado. Toca el candado junto a la dirección → Permisos → Cámara → Permitir, y recarga la página."
+            : "Error: " + e.message}</p>
+          <p><button onclick="location.reload()" style="background:#2563eb;color:#fff;">Reintentar</button></p>`;
+        $("error").classList.add("visible");
+      }
+    }
+
+    $("btnCamara").addEventListener("click", () => { camaraTrasera = !camaraTrasera; iniciarCamara(); });
+    $("btnDetener").addEventListener("click", () => {
+      enviar({ tipo: "DETENER", origen: "teléfono" });
+      ultimoAceptado = null;
+      mostrar("Detenido", "Motor centrado en 90°", 0);
+    });
+
+    conectarWS();
+    iniciarCamara();
+    requestAnimationFrame(bucle);
+  </script>
+</body>
+</html>

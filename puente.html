@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<!--
+  Atlas del Picor — PUERTA DE ENTRADA (para GitHub Pages)
+  Esta página va en el repositorio (GitHub Pages). Busca la dirección del día de la
+  PC que tiene el Arduino y lleva ahí al teléfono. La PC publica esa dirección sola
+  cada vez que se abre INICIAR.bat.
+  · En el teléfono: si el Atlas está encendido, abre el escáner automáticamente.
+  · En la PC: botón "Encender Atlas" (antes hay que ejecutar UNA vez INSTALAR_BOTON.bat).
+  Errores comunes:
+  · "El Atlas está apagado" estando encendido → espera ~20 s: el túnel tarda en abrir.
+  · El botón Encender no hace nada → falta ejecutar INSTALAR_BOTON.bat en esa PC.
+  CANAL debe ser igual a CANAL_AVISOS de server.js.
+-->
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atlas del Picor</title>
+  <link rel="icon" href="data:," />
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+      background: #0f1115; color: #f3f4f6; font-family: system-ui, -apple-system, sans-serif; padding: 20px;
+    }
+    .caja { width: 100%; max-width: 420px; text-align: center; }
+    h1 { font-size: 1.6rem; margin: 0 0 6px; }
+    .sub { color: #9ca3af; margin: 0 0 26px; font-size: 0.95rem; }
+    .estado { background: #181b22; border: 1px solid #2a2f3a; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    .punto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; vertical-align: middle; }
+    .on { background: #22c55e; box-shadow: 0 0 10px #22c55e; } .off { background: #ef4444; } .wait { background: #f59e0b; animation: lat 1s infinite; }
+    @keyframes lat { 50% { opacity: .3; } }
+    #textoEstado { font-weight: 700; vertical-align: middle; }
+    #detalle { color: #9ca3af; font-size: 0.85rem; margin-top: 8px; line-height: 1.4; }
+    a.boton, button {
+      display: block; width: 100%; border: none; border-radius: 12px; padding: 15px; margin-top: 10px;
+      font-size: 1.05rem; font-weight: 700; font-family: inherit; text-decoration: none; cursor: pointer; color: #fff;
+    }
+    .naranja { background: #f97316; } .azul { background: #2563eb; } .verde { background: #16a34a; } .gris { background: #374151; }
+    .oculto { display: none !important; }
+    .nota { font-size: 0.8rem; color: #6b7280; margin-top: 18px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <div class="caja">
+    <h1>🌶️ Atlas del Picor</h1>
+    <p class="sub">Muestra una tarjeta de ají a la cámara y siente su picor</p>
+
+    <div class="estado">
+      <span class="punto wait" id="punto"></span><span id="textoEstado">Buscando el Atlas…</span>
+      <div id="detalle"></div>
+    </div>
+
+    <a class="boton naranja oculto" id="btnEscaner" href="#">📷 Abrir escáner</a>
+    <a class="boton azul oculto" id="btnPanel" href="http://localhost:3000">🎛️ Abrir panel de control</a>
+    <a class="boton verde oculto" id="btnEncender" href="atlaspicor://iniciar">▶ Encender Atlas</a>
+    <button class="gris oculto" id="btnReintentar" type="button">🔄 Buscar de nuevo</button>
+
+    <p class="nota" id="notaPC"></p>
+  </div>
+
+  <script>
+    const CANAL = "atlas-picor-r3czlaptthldh5"; // igual a CANAL_AVISOS de server.js
+    const esTelefono = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+    const $ = id => document.getElementById(id);
+    let buscando = false, encendiendo = false, intentos = 0;
+
+    function estado(clase, texto, detalle) {
+      $("punto").className = "punto " + clase;
+      $("textoEstado").textContent = texto;
+      $("detalle").textContent = detalle || "";
+    }
+    function mostrar(ids) {
+      ["btnEscaner", "btnPanel", "btnEncender", "btnReintentar"].forEach(id => $(id).classList.toggle("oculto", !ids.includes(id)));
+    }
+
+    // 1) Última dirección publicada por la PC
+    async function ultimaDireccion() {
+      const r = await fetch(`https://ntfy.sh/${CANAL}/json?poll=1&since=12h`, { cache: "no-store" });
+      const lineas = (await r.text()).trim().split("\n").filter(Boolean);
+      for (let i = lineas.length - 1; i >= 0; i--) {
+        try {
+          const m = JSON.parse(lineas[i]);
+          if (m.event === "message" && /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/.test(m.message)) return m.message;
+        } catch {}
+      }
+      return null;
+    }
+    // 2) ¿Esa dirección responde de verdad? (la PC podría estar apagada)
+    async function responde(url) {
+      const ac = new AbortController();
+      const t = setTimeout(() => ac.abort(), 7000);
+      try {
+        const r = await fetch(`${url}/info`, { cache: "no-store", signal: ac.signal });
+        return r.ok && (await r.json()).atlas === true;
+      } catch { return false; } finally { clearTimeout(t); }
+    }
+
+    async function buscar() {
+      if (buscando) return;
+      buscando = true; intentos++;
+      if (!encendiendo) estado("wait", "Buscando el Atlas…");
+      try {
+        const url = await ultimaDireccion();
+        if (url && await responde(url)) return encontrado(url);
+        apagado();
+      } catch {
+        estado("off", "Sin conexión a internet", "Revisa los datos o el WiFi de este dispositivo.");
+        mostrar(["btnReintentar"]);
+        setTimeout(buscar, 6000);
+      } finally { buscando = false; }
+    }
+
+    function encontrado(url) {
+      encendiendo = false;
+      const escaner = `${url}/escaner.html`;
+      $("btnEscaner").href = escaner;
+      estado("on", "Atlas encendido", esTelefono ? "Abriendo el escáner…" : "Listo para usar.");
+      if (esTelefono) {
+        mostrar(["btnEscaner"]);
+        if (!new URLSearchParams(location.search).has("quedarse")) setTimeout(() => location.href = escaner, 1200);
+      } else {
+        mostrar(["btnPanel", "btnEscaner"]);
+        $("notaPC").textContent = "El panel se abre en esta PC (la que tiene el Arduino). El escáner es para el teléfono.";
+      }
+    }
+
+    function apagado() {
+      if (encendiendo) {
+        // Seguimos esperando a que la PC termine de abrir el túnel
+        const seg = intentos * 3;
+        estado("wait", "Encendiendo…", `Abriendo el servidor y el túnel (${seg} s). Suele tardar 15–30 s.`);
+        if (seg > 120) {
+          encendiendo = false;
+          estado("off", "No se pudo encender", "Revisa la ventana negra de INICIAR.bat en la PC.");
+          mostrar(esTelefono ? ["btnReintentar"] : ["btnEncender", "btnReintentar"]);
+          return;
+        }
+        setTimeout(buscar, 3000);
+        return;
+      }
+      if (esTelefono) {
+        estado("off", "El Atlas está apagado", "Hay que encenderlo en la PC que tiene el Arduino. Esta página lo detecta sola cuando se encienda.");
+        mostrar(["btnReintentar"]);
+        setTimeout(buscar, 5000);
+      } else {
+        estado("off", "El Atlas está apagado", "Conecta el Arduino y toca Encender.");
+        mostrar(["btnEncender", "btnReintentar"]);
+        $("notaPC").innerHTML = "Si el botón no hace nada: en la carpeta <b>atlas-picor</b> ejecuta una vez <b>INSTALAR_BOTON.bat</b>, o abre <b>INICIAR.bat</b> con doble clic.";
+      }
+    }
+
+    $("btnEncender").addEventListener("click", () => {
+      encendiendo = true; intentos = 0;
+      mostrar([]);
+      estado("wait", "Encendiendo…", "Si Chrome pregunta, toca \"Abrir Atlas del Picor\".");
+      setTimeout(buscar, 4000);
+    });
+    $("btnReintentar").addEventListener("click", () => { intentos = 0; buscar(); });
+
+    buscar();
+  </script>
+</body>
+</html>
